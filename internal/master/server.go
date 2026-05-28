@@ -16,17 +16,18 @@ import (
 // chunkmap engine. It holds no state of its own.
 type Server struct {
 	pb.UnimplementedMasterServiceServer
-	engine *chunkmap.Engine
+	engine      *chunkmap.Engine
+	distributor Distributor
 }
 
 // NewServer creates a MasterService gRPC server backed by a chunkmap.Engine
 // rooted at baseDir.
-func NewServer(baseDir string) (*Server, error) {
+func NewServer(baseDir string, d Distributor) (*Server, error) {
 	e, err := chunkmap.NewEngine(baseDir)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{engine: e}, nil
+	return &Server{engine: e, distributor: d}, nil
 }
 
 // Close releases the underlying BoltDB handle.
@@ -123,3 +124,19 @@ func (s *Server) DeleteChunk(_ context.Context, req *pb.ChunkRequest) (*emptypb.
 	return &emptypb.Empty{}, nil
 }
 
+func (s *Server) GetServersDistribution(ctx context.Context, req *pb.GetServersDistributionRequest) (*pb.GetServersDistributionResponse, error) {
+	selected, err := s.distributor.SelectServers(int(req.ReplicationFactor), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var addrs []string
+	for _, node := range selected {
+		addrs = append(addrs, node.Address)
+	}
+
+	return &pb.GetServersDistributionResponse{
+		ChunkId:         req.ChunkIndex,
+		ServerAddresses: addrs,
+	}, nil
+}
